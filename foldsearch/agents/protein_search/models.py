@@ -1,203 +1,299 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 class ToolsToUseResult(BaseModel):
     tools_to_use: list[str]
 
+# Enhanced structure info with complete metadata
+class ProteinStructureInfo(BaseModel):
+    """Complete protein structure information"""
+    pdb_id: str
+    title: str = ""
+    method: str = ""
+    resolution_A: float = 0.0
+    r_work: float = 0.0
+    r_free: float = 0.0
+    space_group: str = ""
+    deposition_date: str = ""
+    organisms: List[str] = []
+    protein_chains: List[str] = []
+    ligands: List[str] = []
+    entities: List[Dict[str, Any]] = []
+    assembly: Dict[str, Any] = {}
+    quality_score: str = ""
+    sequence: str = ""
+    sequence_length: int = 0
+    molecule_type: str = ""
+    score: float = 0.0
 
-class ProteinSearchUnifiedResults(BaseModel):
-    """
-    Single comprehensive DTO for ALL protein search agent responses.
-    Contains every possible field from all 10 functions in tooling.py.
-    Most fields will be None for any given operation.
-    """
-    
-    # ===== OPERATION METADATA =====
-    operation_type: Optional[str] = None
-    tool_used: Optional[str] = None
-    query_params: Optional[Dict[str, Any]] = None
-    execution_time: Optional[float] = None
-    timestamp: Optional[datetime] = Field(default_factory=datetime.now)
+# Base model with comprehensive fields for all protein search tools
+class BaseProteinSearchResult(BaseModel):
+    """Base model with comprehensive fields for all protein search tool results"""
+    tool_name: str
     success: bool = True
-    error_message: Optional[str] = None
-    warnings: Optional[List[str]] = None
+    execution_time: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.now)
+    query_params: Dict[str, Any] = {}
+    error_message: str = ""
+    warnings: List[str] = []
     
-    # ===== BASIC SEARCH RESULTS (search_structures, search_by_sequence, search_by_chemical, get_high_quality_structures) =====
-    pdb_ids: Optional[List[str]] = None
-    total_count: Optional[int] = None
-    returned_count: Optional[int] = None
-    scores: Optional[Dict[str, float]] = None
+    # Comprehensive results - no None values
+    structures: List[ProteinStructureInfo] = []
+    pdb_ids: List[str] = []
+    total_count: int = 0
+    returned_count: int = 0
+    scores: Dict[str, float] = {}
     
-    # ===== STRUCTURE SEARCH SPECIFIC (search_by_structure) =====
-    by_reference: Optional[Dict[str, Any]] = None
+    # Metadata about the search
+    search_metadata: Dict[str, Any] = {}
+
+# Individual tool result models with rich data
+
+class SearchStructuresResult(BaseProteinSearchResult):
+    """Results from search_structures_tool with comprehensive structure data"""
+    tool_name: str = "search_structures_tool"
     
-    # ===== DETAILED STRUCTURE INFORMATION (get_structure_details, get_structural_summary) =====
-    structure_details: Optional[Dict[str, Any]] = None
+    # Tool-specific fields
+    search_query: str = ""
+    organism: str = ""
+    method: str = ""
+    max_resolution: float = 0.0
     
-    # Flattened structure detail fields for individual structures
-    pdb_id: Optional[str] = None
-    title: Optional[str] = None
-    method: Optional[str] = None
-    resolution_A: Optional[float] = None
-    r_work: Optional[float] = None
-    r_free: Optional[float] = None
-    space_group: Optional[str] = None
-    polymer_entity_count: Optional[int] = None
-    ligands: Optional[List[str]] = None
-    deposition_date: Optional[str] = None
-    entities: Optional[List[Dict[str, Any]]] = None
-    assembly: Optional[Dict[str, Any]] = None
+    # Enhanced results
+    organisms_found: List[str] = []
+    methods_found: List[str] = []
+    resolution_range: Dict[str, float] = {"min": 0.0, "max": 0.0}
+
+class SearchBySequenceResult(BaseProteinSearchResult):
+    """Results from search_by_sequence_tool with sequence alignment data"""
+    tool_name: str = "search_by_sequence_tool"
     
-    # Assembly specific fields
-    oligomeric_state: Optional[str] = None
-    oligomeric_count: Optional[int] = None
-    assembly_method: Optional[str] = None
+    # Tool-specific fields
+    sequence: str = ""
+    sequence_type: str = "protein"
+    identity_cutoff: float = 0.5
+    evalue_cutoff: float = 1.0
     
-    # Quality metrics
-    quality_score: Optional[str] = None
+    # Enhanced results
+    sequence_length: int = 0
+    alignment_data: List[Dict[str, Any]] = []
+    identity_scores: Dict[str, float] = {}
+    evalue_scores: Dict[str, float] = {}
+
+class SearchByStructureResult(BaseProteinSearchResult):
+    """Results from search_by_structure_tool with structural similarity data"""
+    tool_name: str = "search_by_structure_tool"
     
-    # Composition information (get_structural_summary)
-    protein_entities: Optional[int] = None
-    total_entities: Optional[int] = None
-    ligand_count: Optional[int] = None
-    unique_organisms: Optional[int] = None
-    organisms: Optional[List[str]] = None
+    # Tool-specific fields
+    reference_pdb_ids: List[str] = []
+    assembly_id: str = "1"
+    match_type: str = "relaxed"
     
-    # Research relevance indicators
-    has_ligands: Optional[bool] = None
-    is_complex: Optional[bool] = None
-    high_resolution: Optional[bool] = None
+    # Enhanced results
+    similarity_scores: Dict[str, float] = {}
+    structural_matches: Dict[str, Dict[str, Any]] = {}
+    by_reference: Dict[str, Any] = {}
+
+class SearchByChemicalResult(BaseProteinSearchResult):
+    """Results from search_by_chemical_tool with chemical compound data"""
+    tool_name: str = "search_by_chemical_tool"
     
-    # ===== SEQUENCE INFORMATION (get_sequences) =====
-    sequences: Optional[Dict[str, Any]] = None
+    # Tool-specific fields
+    chemical_identifier: str = ""
+    identifier_type: str = "SMILES"
+    ligand_name: str = ""
+    match_type: str = "graph-relaxed"
     
-    # Flattened sequence fields for individual sequences
-    entity_id: Optional[str] = None
-    sequence: Optional[str] = None
-    sequence_length: Optional[int] = None
-    sequence_type: Optional[str] = None
-    molecule_type: Optional[str] = None
+    # Enhanced results
+    ligands_found: List[Dict[str, Any]] = []
+    binding_sites: Dict[str, List[Dict[str, Any]]] = {}
+    chemical_properties: Dict[str, Any] = {}
+
+class GetHighQualityStructuresResult(BaseProteinSearchResult):
+    """Results from get_high_quality_structures_tool with quality metrics"""
+    tool_name: str = "get_high_quality_structures_tool"
     
-    # ===== COMPARISON RESULTS (compare_structures) =====
-    comparisons: Optional[Dict[str, Any]] = None
-    comparison_summary: Optional[Dict[str, Any]] = None
+    # Tool-specific fields
+    max_resolution: float = 2.0
+    max_r_work: float = 0.25
+    max_r_free: float = 0.28
+    method: str = "X-RAY DIFFRACTION"
+    min_year: int = 2000
     
-    # Flattened comparison fields
-    sequence_identity: Optional[float] = None
-    length_difference: Optional[int] = None
-    structural_similarity: Optional[float] = None
-    comparison_note: Optional[str] = None
+    # Enhanced results
+    quality_distribution: Dict[str, int] = {}
+    resolution_stats: Dict[str, float] = {}
+    yearly_distribution: Dict[int, int] = {}
+
+class StructureInfo(BaseModel):
+    """Detailed information for a single structure"""
+    pdb_id: str
+    title: str = ""
+    method: str = ""
+    resolution_A: float = 0.0
+    r_work: float = 0.0
+    r_free: float = 0.0
+    space_group: str = ""
+    deposition_date: str = ""
+    organisms: List[str] = []
+    ligands: List[str] = []
+    entities: List[Dict[str, Any]] = []
+    assembly: Dict[str, Any] = {}
+    quality_score: str = ""
+
+class GetStructureDetailsResult(BaseProteinSearchResult):
+    """Results from get_structure_details_tool with detailed structure information"""
+    tool_name: str = "get_structure_details_tool"
     
-    # ===== INTERACTION ANALYSIS (analyze_interactions) =====
-    interactions: Optional[Dict[str, Any]] = None
+    # Enhanced structure details
+    structure_details: Dict[str, StructureInfo] = {}
+    include_assembly: bool = True
     
-    # Flattened interaction fields
-    protein_chains: Optional[List[str]] = None
-    interaction_types: Optional[List[str]] = None
-    interaction_descriptions: Optional[List[str]] = None
-    quaternary_structure: Optional[Dict[str, Any]] = None
+    # Additional metadata
+    structure_types: List[str] = []
+    experimental_methods: List[str] = []
+    organism_diversity: Dict[str, int] = {}
+
+class SequenceInfo(BaseModel):
+    """Sequence information for a structure entity"""
+    pdb_id: str
+    entity_id: str
+    sequence: str = ""
+    sequence_length: int = 0
+    sequence_type: str = ""
+    molecule_type: str = ""
+    organism: str = ""
+    description: str = ""
+
+class GetSequencesResult(BaseProteinSearchResult):
+    """Results from get_sequences_tool with sequence data"""
+    tool_name: str = "get_sequences_tool"
     
-    # Protein-protein interaction fields
-    multi_chain_complex: Optional[bool] = None
-    chain_count: Optional[int] = None
+    # Enhanced sequence data
+    sequences: Dict[str, SequenceInfo] = {}
+    entity_ids: List[str] = []
     
-    # Protein-ligand interaction fields
-    protein_ligand_interactions: Optional[bool] = None
-    bound_ligands: Optional[List[str]] = None
+    # Additional metadata
+    sequence_stats: Dict[str, Any] = {}
+    length_distribution: Dict[str, int] = {}
+    type_distribution: Dict[str, int] = {}
+
+class ComparisonInfo(BaseModel):
+    """Comparison information between two structures"""
+    pdb_pair: str
+    sequence_identity: float = 0.0
+    length_difference: int = 0
+    structural_similarity: float = 0.0
+    comparison_note: str = ""
+    rmsd: float = 0.0
+    alignment_length: int = 0
+
+class CompareStructuresResult(BaseProteinSearchResult):
+    """Results from compare_structures_tool with comparison data"""
+    tool_name: str = "compare_structures_tool"
     
-    # ===== EXPERIMENTAL INFORMATION =====
-    experimental_method: Optional[str] = None
-    experimental_details: Optional[Dict[str, Any]] = None
+    # Enhanced comparison data
+    comparison_type: str = "both"
+    comparisons: Dict[str, ComparisonInfo] = {}
+    summary: Dict[str, Any] = {}
     
-    # ===== ORGANISM INFORMATION =====
-    organism: Optional[str] = None
-    scientific_name: Optional[str] = None
-    common_name: Optional[str] = None
-    taxonomy_id: Optional[int] = None
+    # Additional metadata
+    similarity_matrix: Dict[str, Dict[str, float]] = {}
+    cluster_analysis: Dict[str, Any] = {}
+
+class InteractionInfo(BaseModel):
+    """Interaction information for a structure"""
+    pdb_id: str
+    protein_chains: List[str] = []
+    ligands: List[str] = []
+    interactions: List[Dict[str, Any]] = []
+    quaternary_structure: Dict[str, Any] = {}
+    binding_sites: List[Dict[str, Any]] = []
+    interface_area: float = 0.0
+
+class AnalyzeInteractionsResult(BaseProteinSearchResult):
+    """Results from analyze_interactions_tool with interaction analysis"""
+    tool_name: str = "analyze_interactions_tool"
     
-    # ===== CHEMICAL INFORMATION =====
-    smiles: Optional[str] = None
-    inchi: Optional[str] = None
-    ligand_name: Optional[str] = None
-    chemical_identifier: Optional[str] = None
+    # Enhanced interaction data
+    interaction_type: str = "all"
+    interactions: Dict[str, InteractionInfo] = {}
     
-    # ===== SEARCH PARAMETERS (tracking what was searched for) =====
-    search_query: Optional[str] = None
-    search_organism: Optional[str] = None
-    search_method: Optional[str] = None
-    max_resolution: Optional[float] = None
-    identity_cutoff: Optional[float] = None
-    evalue_cutoff: Optional[float] = None
-    reference_pdb_ids: Optional[List[str]] = None
-    assembly_id: Optional[str] = None
-    match_type: Optional[str] = None
+    # Additional metadata
+    interaction_summary: Dict[str, Any] = {}
+    complex_types: Dict[str, int] = {}
+    binding_partners: Dict[str, List[str]] = {}
+
+class StructuralSummaryInfo(BaseModel):
+    """Comprehensive summary for a structure"""
+    pdb_id: str
+    title: str = ""
+    experimental: Dict[str, Any] = {}
+    composition: Dict[str, Any] = {}
+    biological_assembly: Dict[str, Any] = {}
+    research_relevance: Dict[str, Any] = {}
+    quality: Dict[str, Any] = {}
+    organisms: List[str] = []
+    functional_classification: str = ""
+    research_applications: List[str] = []
+
+class GetStructuralSummaryResult(BaseProteinSearchResult):
+    """Results from get_structural_summary_tool with comprehensive summaries"""
+    tool_name: str = "get_structural_summary_tool"
     
-    # ===== QUALITY FILTERS =====
-    max_r_work: Optional[float] = None
-    max_r_free: Optional[float] = None
-    min_year: Optional[int] = None
+    # Enhanced summary data
+    include_quality_metrics: bool = True
+    summaries: Dict[str, StructuralSummaryInfo] = {}
     
-    # ===== PAGINATION/LIMITS =====
-    limit: Optional[int] = None
-    start_index: Optional[int] = None
+    # Additional metadata
+    research_trends: Dict[str, Any] = {}
+    quality_overview: Dict[str, Any] = {}
+    functional_categories: Dict[str, int] = {}
+
+# Union type for all possible tool results
+ProteinToolResult = Union[
+    SearchStructuresResult,
+    SearchBySequenceResult,
+    SearchByStructureResult,
+    SearchByChemicalResult,
+    GetHighQualityStructuresResult,
+    GetStructureDetailsResult,
+    GetSequencesResult,
+    CompareStructuresResult,
+    AnalyzeInteractionsResult,
+    GetStructuralSummaryResult
+]
+
+class ProteinSearchResponse(BaseModel):
+    """Container for all protein search results"""
+    query: str
+    tool_results: List[ProteinToolResult] = []
+    total_tools_used: int = 0
+    successful_tools: int = 0
+    failed_tools: int = 0
+    total_execution_time: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.now)
+    success: bool = True
     
-    # ===== RAW DATA =====
-    raw_response: Optional[Dict[str, Any]] = None
-    raw_query: Optional[Dict[str, Any]] = None
+    # Enhanced metadata
+    search_summary: Dict[str, Any] = {}
+    unique_structures: List[str] = []
+    organism_coverage: Dict[str, int] = {}
     
-    # ===== COUNTS AND STATISTICS =====
-    total_structures: Optional[int] = None
-    successful_retrievals: Optional[int] = None
-    failed_retrievals: Optional[int] = None
+    def get_all_pdb_ids(self) -> List[str]:
+        """Get all unique PDB IDs from all tool results"""
+        all_pdb_ids = set()
+        for result in self.tool_results:
+            if result.pdb_ids:
+                all_pdb_ids.update(result.pdb_ids)
+        return list(all_pdb_ids)
     
-    # ===== MULTIPLE STRUCTURE HANDLING =====
-    multiple_structures: Optional[bool] = None
-    structure_count: Optional[int] = None
+    def get_total_structures_found(self) -> int:
+        """Get total count of unique structures found"""
+        return len(self.get_all_pdb_ids())
     
-    # ===== NOTES AND ADDITIONAL INFO =====
-    notes: Optional[List[str]] = None
-    additional_info: Optional[Dict[str, Any]] = None
-    
-    class Config:
-        use_enum_values = True
-        validate_assignment = True
-        extra = "allow"  # Allow additional fields for future extensions
-        
-    def has_results(self) -> bool:
-        """Check if there are any meaningful results"""
-        return (
-            (self.pdb_ids and len(self.pdb_ids) > 0) or
-            (self.structure_details and len(self.structure_details) > 0) or
-            (self.sequences and len(self.sequences) > 0) or
-            (self.comparisons and len(self.comparisons) > 0) or
-            (self.interactions and len(self.interactions) > 0) or
-            bool(self.pdb_id)
-        )
-    
-    def get_operation_summary(self) -> str:
-        """Get a summary of what operation was performed and results"""
-        op = self.operation_type or self.tool_used or "Unknown operation"
-        count = self.get_result_count()
-        
-        if not self.success:
-            return f"{op} failed: {self.error_message}"
-        elif count == 0:
-            return f"{op} completed with no results"
-        else:
-            return f"{op} completed with {count} results"
-    
-    def get_result_count(self) -> int:
-        """Get the count of results from various possible result fields"""
-        if self.pdb_ids:
-            return len(self.pdb_ids)
-        elif self.returned_count:
-            return self.returned_count
-        elif self.total_count:
-            return self.total_count
-        elif self.structure_count:
-            return self.structure_count
-        elif self.successful_retrievals:
-            return self.successful_retrievals
-        else:
-            return 0
+    def get_summary(self) -> str:
+        """Get a summary of all results"""
+        total_unique = self.get_total_structures_found()
+        return f"{self.total_tools_used} tools used, {total_unique} unique structures found"

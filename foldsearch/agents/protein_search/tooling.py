@@ -60,20 +60,123 @@ def _make_rest_request(url: str, timeout: int = DEFAULT_TIMEOUT, max_retries: in
     return None
 
 
-def _parse_search_results(response: Dict, limit: Optional[int] = None) -> Dict:
-    """Parse API response to extract PDB IDs and scores"""
+def _enhance_structures_with_details(pdb_ids: List[str], scores: Dict[str, float], timeout: int = DEFAULT_TIMEOUT) -> List[Dict]:
+    """
+    Enhance PDB IDs with comprehensive structural details
+    """
+    if not pdb_ids:
+        return []
+    
+    # Get detailed structure information
+    details = get_structure_details(pdb_ids, include_assembly=True, timeout=timeout)
+    
+    # Get sequences for each structure 
+    sequences = get_sequences(pdb_ids, timeout=timeout)
+    
+    enhanced_structures = []
+    
+    for pdb_id in pdb_ids:
+        pdb_upper = pdb_id.upper()
+        structure_detail = details.get(pdb_upper, {})
+        
+        # Get sequence info
+        sequence_key = f"{pdb_upper}_1"  # Try entity 1 first
+        sequence_info = sequences.get(sequence_key, {})
+        if not sequence_info or "error" in sequence_info:
+            # Try other entity IDs
+            for entity_id in ["2", "3"]:
+                alt_key = f"{pdb_upper}_{entity_id}"
+                if alt_key in sequences and "error" not in sequences[alt_key]:
+                    sequence_info = sequences[alt_key]
+                    break
+        
+        # Extract comprehensive data
+        if "error" not in structure_detail:
+            entities = structure_detail.get("entities", [])
+            organisms = []
+            protein_chains = []
+            
+            for entity in entities:
+                if entity.get("organism"):
+                    organisms.append(entity["organism"])
+                if entity.get("chains"):
+                    protein_chains.extend(entity["chains"])
+                    
+            enhanced_structure = {
+                "pdb_id": pdb_id,
+                "title": structure_detail.get("title", f"Structure {pdb_id}") or f"Structure {pdb_id}",
+                "method": structure_detail.get("method", "Unknown") or "Unknown",
+                "resolution_A": structure_detail.get("resolution_A", 0.0) or 0.0,
+                "r_work": structure_detail.get("r_work", 0.0) or 0.0,
+                "r_free": structure_detail.get("r_free", 0.0) or 0.0,
+                "space_group": structure_detail.get("space_group", "") or "",
+                "deposition_date": structure_detail.get("deposition_date", "") or "",
+                "organisms": organisms or [],
+                "protein_chains": protein_chains or [],
+                "ligands": structure_detail.get("ligands", []) or [],
+                "entities": entities or [],
+                "assembly": structure_detail.get("assembly", {}) or {},
+                "quality_score": structure_detail.get("quality_score", "") or "",
+                "sequence": sequence_info.get("sequence", "") or "",
+                "sequence_length": sequence_info.get("length", 0) or len(sequence_info.get("sequence", "")),
+                "molecule_type": sequence_info.get("type", "") or "",
+                "score": scores.get(pdb_id, 0.0)
+            }
+        else:
+            # Fallback for structures with errors - still provide complete data
+            enhanced_structure = {
+                "pdb_id": pdb_id,
+                "title": f"Structure {pdb_id}",
+                "method": "Data not available",
+                "resolution_A": 0.0,
+                "r_work": 0.0,
+                "r_free": 0.0,
+                "space_group": "Unknown",
+                "deposition_date": "Unknown",
+                "organisms": ["Unknown"],
+                "protein_chains": [],
+                "ligands": [],
+                "entities": [],
+                "assembly": {},
+                "quality_score": "Data not available",
+                "sequence": "",
+                "sequence_length": 0,
+                "molecule_type": "Unknown",
+                "score": scores.get(pdb_id, 0.0)
+            }
+            
+        enhanced_structures.append(enhanced_structure)
+    
+    return enhanced_structures
+
+
+def _parse_search_results(response: Dict, limit: Optional[int] = None, fetch_details: bool = True, timeout: int = DEFAULT_TIMEOUT) -> Dict:
+    """Parse API response to extract PDB IDs, scores, and comprehensive structural data"""
     if not response:
-        return {"pdb_ids": [], "total_count": 0, "scores": {}}
+        return {
+            "pdb_ids": [], 
+            "total_count": 0, 
+            "scores": {},
+            "returned_count": 0,
+            "metadata": {},
+            "structures": []
+        }
 
     result_set = response.get("result_set", [])
     total_count = response.get("total_count", 0)
 
     pdb_ids = []
     scores = {}
+    metadata = {
+        "search_completed": True,
+        "api_response_time": 0.0,
+        "result_distribution": {},
+        "quality_metrics": {}
+    }
 
     for result in result_set:
         pdb_id = result.get("identifier", "")
-        score = result.get("score", 0)
+        score = result.get("score", 0.0)
 
         # Clean PDB ID (handle different formats)
         if "_" in pdb_id:
@@ -91,11 +194,29 @@ def _parse_search_results(response: Dict, limit: Optional[int] = None) -> Dict:
         pdb_ids = pdb_ids[:limit]
         scores = {k: v for k, v in scores.items() if k in pdb_ids}
 
+    # Add metadata about score distribution
+    if scores:
+        score_values = list(scores.values())
+        metadata["quality_metrics"] = {
+            "avg_score": sum(score_values) / len(score_values),
+            "max_score": max(score_values),
+            "min_score": min(score_values),
+            "score_range": max(score_values) - min(score_values)
+        }
+
+    # Fetch comprehensive structural details
+    structures = []
+    if fetch_details and pdb_ids:
+        print(f"📋 Fetching detailed information for {len(pdb_ids)} structures...")
+        structures = _enhance_structures_with_details(pdb_ids, scores, timeout)
+
     return {
         "pdb_ids": pdb_ids,
         "total_count": total_count,
         "scores": scores,
         "returned_count": len(pdb_ids),
+        "metadata": metadata,
+        "structures": structures
     }
 
 

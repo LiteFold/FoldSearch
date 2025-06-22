@@ -13,129 +13,157 @@ MAKE_AGENT_QUERY_PROMPT = """"
 
 You have access to a comprehensive protein structure search toolkit with 10 core functions. Each function serves specific research needs and can be combined for powerful workflows.
 
+## CRITICAL PERFORMANCE REQUIREMENTS
+🚨 **ALWAYS USE LIMIT=10 OR LESS** - Never exceed 10 structures to ensure fast response times
+🚨 **PRIORITIZE QUALITY OVER QUANTITY** - Focus on the most relevant, high-quality structures
+🚨 **EFFICIENT SEARCHES** - Design queries to find the best 5-10 structures, not hundreds
+
 ## Core Functions Overview
 
-### 1. `search_structures(query, organism=None, method=None, max_resolution=None, limit=100)`
+### 1. `search_structures(query, organism=None, method=None, max_resolution=None, limit=10)`
 **Purpose:** General structure search by keywords, organism, experimental method, or resolution  
 **When to use:** Initial exploration, finding structures related to specific proteins or conditions  
 **Best for:** Broad discovery, keyword-based searches  
-**Example:** `search_structures("insulin", max_resolution=2.0, limit=5)`
+**Example:** `search_structures("insulin", max_resolution=2.0, limit=10)`
+**⚠️ ALWAYS USE limit=10 OR LESS**
 
-### 2. `search_by_sequence(sequence, sequence_type="protein", identity_cutoff=0.3, max_resolution=None, limit=100)`
+### 2. `search_by_sequence(sequence, sequence_type="protein", identity_cutoff=0.3, max_resolution=None, limit=10)`
 **Purpose:** Find structures with similar protein/DNA/RNA sequences  
 **When to use:** When you have a sequence and need similar structures  
 **Best for:** Homology modeling, finding structural templates, evolutionary studies  
-**Example:** `search_by_sequence(protein_sequence, identity_cutoff=0.3)`
+**Example:** `search_by_sequence(protein_sequence, identity_cutoff=0.5, limit=10)`
+**⚠️ ALWAYS USE limit=10 OR LESS**
 
-### 3. `search_by_structure(reference_pdb_ids, match_type="strict", limit=100)`
+### 3. `search_by_structure(reference_pdb_ids, match_type="strict", limit=10)`
 **Purpose:** Find structures with similar 3D shapes/folds  
 **When to use:** When you want similar 3D conformations regardless of sequence  
 **Best for:** Fold recognition, structural classification, finding alternative conformations  
-**Example:** `search_by_structure("4INS", match_type="relaxed")`
+**Example:** `search_by_structure("4INS", match_type="relaxed", limit=10)`
+**⚠️ ALWAYS USE limit=10 OR LESS**
 
-### 4. `search_by_chemical(ligand_name=None, ligand_id=None, max_resolution=None, limit=100)`
+### 4. `search_by_chemical(ligand_name=None, ligand_id=None, max_resolution=None, limit=10)`
 **Purpose:** Find structures containing specific ligands or chemical compounds  
 **When to use:** Looking for protein-ligand complexes  
 **Best for:** Drug design, studying binding sites, ligand interaction analysis  
-**Example:** `search_by_chemical(ligand_name="ATP", max_resolution=2.0)`
+**Example:** `search_by_chemical(ligand_name="ATP", max_resolution=2.0, limit=10)`
+**⚠️ ALWAYS USE limit=10 OR LESS**
 
-### 5. `get_high_quality_structures(max_resolution=2.0, max_r_work=None, max_r_free=None, min_year=None, limit=100)`
+### 5. `get_high_quality_structures(max_resolution=2.0, max_r_work=None, max_r_free=None, min_year=None, limit=10)`
 **Purpose:** Get structures meeting strict quality criteria  
 **When to use:** When you need only the highest quality structures  
 **Best for:** Structural biology research, accurate measurements, publication-quality data  
-**Example:** `get_high_quality_structures(max_resolution=1.5, max_r_work=0.20)`
+**Example:** `get_high_quality_structures(max_resolution=1.5, max_r_work=0.20, limit=5)`
+**⚠️ ALWAYS USE limit=10 OR LESS**
 
 ### 6. `get_structure_details(pdb_ids, include_assembly=False)`
 **Purpose:** Get comprehensive information about specific structures  
 **When to use:** When you need detailed metadata about structures  
 **Best for:** Structure analysis, understanding composition, experimental details  
 **Example:** `get_structure_details(["4INS", "1ZNI"], include_assembly=True)`
+**⚠️ ONLY PASS 5-10 PDB IDs MAXIMUM**
 
 ### 7. `get_sequences(pdb_ids)`
 **Purpose:** Extract actual protein/DNA/RNA sequences from structures  
 **When to use:** When you need sequences for computational analysis  
 **Best for:** Sequence analysis, alignment studies, computational biology  
 **Example:** `get_sequences(["4INS", "1ZNI"])`
+**⚠️ ONLY PASS 5-10 PDB IDs MAXIMUM**
 
 ### 8. `compare_structures(pdb_ids, comparison_type="sequence")`
 **Purpose:** Quantitatively compare multiple structures  
 **When to use:** When you want to compare structures systematically  
 **Best for:** Evolutionary studies, conformational analysis, structure-function relationships  
 **Example:** `compare_structures(["4INS", "1ZNI", "3W11"], comparison_type="sequence")`
+**⚠️ ONLY PASS 3-5 PDB IDs FOR COMPARISON**
 
 ### 9. `analyze_interactions(pdb_ids, interaction_type="all")`
 **Purpose:** Analyze molecular interactions and binding partners  
 **When to use:** Studying protein-protein, protein-ligand, or protein-nucleic acid interactions  
 **Best for:** Drug discovery, understanding protein complexes, binding site analysis  
 **Example:** `analyze_interactions(["4INS", "1HVH"], interaction_type="all")`
+**⚠️ ONLY PASS 3-5 PDB IDs MAXIMUM**
 
 ### 10. `get_structural_summary(pdb_ids, include_quality_metrics=False)`
 **Purpose:** Generate comprehensive research overviews  
 **When to use:** When you need quick assessment or literature review material  
 **Best for:** Research proposals, project planning, structure assessment  
 **Example:** `get_structural_summary(["4INS", "1HVH"], include_quality_metrics=True)`
+**⚠️ ONLY PASS 5-10 PDB IDs MAXIMUM**
 
 ## Usage Guidelines & Best Practices
 
-### Function Selection Guide
-| Research Goal | Primary Function | Follow-up Functions |
-|---------------|------------------|-------------------|
-| General protein exploration | `search_structures()` | `get_structure_details()` |
-| Find structural templates | `search_by_sequence()` | `compare_structures()` |
-| Study protein folds | `search_by_structure()` | `get_structural_summary()` |
-| Drug discovery | `search_by_chemical()` | `analyze_interactions()` |
-| High-quality analysis | `get_high_quality_structures()` | `get_structure_details()` |
-| Sequence analysis | `get_sequences()` | `compare_structures()` |
+### Performance-First Function Selection Guide
+| Research Goal | Primary Function | Follow-up Functions | Max Structures |
+|---------------|------------------|-------------------|----------------|
+| General protein exploration | `search_structures(limit=10)` | `get_structure_details(5 IDs)` | 10 |
+| Find structural templates | `search_by_sequence(limit=10)` | `compare_structures(3-5 IDs)` | 10 |
+| Study protein folds | `search_by_structure(limit=10)` | `get_structural_summary(5 IDs)` | 10 |
+| Drug discovery | `search_by_chemical(limit=10)` | `analyze_interactions(3-5 IDs)` | 10 |
+| High-quality analysis | `get_high_quality_structures(limit=5)` | `get_structure_details(5 IDs)` | 5 |
+| Sequence analysis | `get_sequences(5 IDs)` | `compare_structures(3-5 IDs)` | 5 |
 
-### Common Workflows
+### Optimized Common Workflows
 
-**Discovery Workflow:**
-1. `search_structures()` → find candidates
-2. `get_structure_details()` → examine promising hits  
-3. `get_structural_summary()` → comprehensive overview
+**Fast Discovery Workflow:**
+1. `search_structures(query, limit=10)` → find top 10 candidates
+2. `get_structure_details(top_5_pdb_ids)` → examine best hits  
+3. `get_structural_summary(top_5_pdb_ids)` → comprehensive overview
 
-**Homology Modeling:**
-1. `search_by_sequence()` → find templates
-2. `get_sequences()` → extract sequences
-3. `compare_structures()` → evaluate similarity
+**Efficient Homology Modeling:**
+1. `search_by_sequence(sequence, limit=10)` → find top 10 templates
+2. `get_sequences(top_5_pdb_ids)` → extract sequences
+3. `compare_structures(top_3_pdb_ids)` → evaluate best candidates
 
-**Drug Discovery:**
-1. `search_by_chemical()` → find ligand-bound structures
-2. `analyze_interactions()` → study binding
-3. `get_high_quality_structures()` → get best structures for modeling
+**Focused Drug Discovery:**
+1. `search_by_chemical(ligand, limit=10)` → find top ligand-bound structures
+2. `analyze_interactions(top_3_pdb_ids)` → study best binding examples
+3. `get_high_quality_structures(limit=5)` → get highest quality structures
 
 ### Performance & Error Handling Tips
 
-- **Limits:** Use reasonable limits (100-1000) for large searches
-- **Filtering:** Filter by resolution/quality early to reduce data volume  
-- **Specificity:** Use specific organism names when possible
-- **Performance:** Sequence searches are slower than text searches
-- **Chaining:** Chain functions by using output from one as input to another
-- **Error handling:** Always check if results contain data before proceeding
+- **STRICT LIMITS:** Always use limit=10 or less for search functions
+- **SELECTIVE PROCESSING:** Only pass 3-10 PDB IDs to analysis functions
+- **QUALITY OVER QUANTITY:** Better to get 5 excellent structures than 100 mediocre ones
+- **FILTERING:** Filter by resolution/quality early to reduce data volume  
+- **SPECIFICITY:** Use specific organism names when possible
+- **PERFORMANCE:** Sequence searches are slower than text searches
+- **CHAINING:** Chain functions by using output from one as input to another
+- **ERROR HANDLING:** Always check if results contain data before proceeding
 
-### Parameter Guidelines
+### Parameter Guidelines for Speed & Quality
 
 - **Resolution:** 1.5Å = very high, 2.0Å = high, 2.5Å = good, 3.0Å+ = moderate
-- **Identity cutoff:** 0.3 = 30% minimum similarity, 0.7 = 70% high similarity
-- **Match types:** "strict" = exact matches, "relaxed" = allow flexibility
-- **Limits:** Start with 10-50 for exploration, increase as needed
+- **Identity cutoff:** 0.5+ = high similarity (faster), 0.3 = minimum similarity
+- **Match types:** "strict" = exact matches (faster), "relaxed" = allow flexibility
+- **Limits:** ALWAYS 10 or less, prefer 5-10 for exploration
 
-Always start with the most appropriate primary function based on your research goal, then use follow-up functions to get detailed information about interesting results.
+### MANDATORY QUERY DESIGN RULES:
+1. 🚨 **NEVER exceed limit=10 for any search function**
+2. 🚨 **NEVER pass more than 10 PDB IDs to any analysis function**
+3. 🚨 **Always prioritize high-resolution, recent structures**
+4. 🚨 **Focus on the most relevant results, not comprehensive coverage**
+5. 🚨 **Use quality filters (max_resolution=2.5) to reduce result sets**
+
+Always start with the most appropriate primary function based on your research goal, then use follow-up functions to get detailed information about the TOP 5-10 most interesting results only.
 
 -------------------------------------------------------------------------------------
 
 Above is a manual of a protein search api guide. Now based on the the given dump of information come up with maximum of 5 queries in the form of list, which could be passed into these different tools. 
 
+🚨 **CRITICAL: Each query MUST include limit=10 or less for search functions, and analysis functions should only process 3-10 structures maximum.**
+
 Here is an arbitary example of how the queries are like:
 [
-    "Find high-quality structures of human insulin",
-    "Search for structures containing ATP ligand",
-    "Find sequences for PDB ID 4INS", 
-    "What are the protein-ligand interactions in structure 1HVH?",
-    "Compare the structures 4INS and 1ZNI"
+    "Find high-quality structures of human insulin with limit=5",
+    "Search for structures containing ATP ligand with limit=10",
+    "Find sequences for top 5 PDB IDs", 
+    "What are the protein-ligand interactions in top 3 structures?",
+    "Compare the best 3 insulin structures"
 ]
 
 This is a dummy example, but based on the research dump from the model and user query which are provided below, you are required to come up with such queries, which can be passed into the search api.
+
+**REMEMBER: EFFICIENCY IS KEY - Focus on getting the BEST 5-10 structures, not hundreds!**
 """
 
 

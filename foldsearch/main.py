@@ -8,8 +8,8 @@ from datetime import datetime
 from agents.web_search.worker import WebResearchAgent
 from agents.protein_search.worker import ProteinSearchAgent
 from agents.models import CombinedSearchResult
+from agents.protein_search.models import ProteinSearchResponse
 from agents.web_search.models import WebResearchAgentModel
-from agents.protein_search.models import ProteinSearchUnifiedResults
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -45,6 +45,12 @@ class SearchRequest(BaseModel):
     include_protein: bool = True
     max_protein_queries: int = 5
 
+class WebSearchRequest(BaseModel):
+    query: str
+
+class ProteinSearchRequest(BaseModel):
+    query: str
+
 class SearchResponse(BaseModel):
     success: bool
     message: str
@@ -52,87 +58,19 @@ class SearchResponse(BaseModel):
     execution_time: float
     timestamp: datetime
 
-def deduplicate_protein_results(protein_results: List[ProteinSearchUnifiedResults]) -> Optional[ProteinSearchUnifiedResults]:
-    """
-    De-duplicate and merge multiple protein search results
-    """
-    if not protein_results:
-        print("   No protein results to deduplicate")
-        return None
-    
-    print(f"   Deduplicating {len(protein_results)} protein search results...")
-    
-    if len(protein_results) == 1:
-        print(f"   Single result with {protein_results[0].get_result_count()} items")
-        return protein_results[0]
-    
-    # Combine all results into one unified result
-    combined = ProteinSearchUnifiedResults(
-        operation_type="combined_protein_search",
-        timestamp=datetime.now(),
-        success=True,
-        query_params={"combined_queries": len(protein_results)}
-    )
-    
-    # Track data for deduplication
-    all_pdb_ids = set()
-    all_scores = {}
-    all_tools = set()
-    all_errors = []
-    total_execution_time = 0.0
-    successful_retrievals = 0
-    failed_retrievals = 0
-    
-    # Aggregate data from all results
-    for i, result in enumerate(protein_results):
-        print(f"   Processing result {i+1}: success={result.success}, pdb_count={result.get_result_count()}")
-        
-        if result.success:
-            successful_retrievals += 1
-            
-            # Collect PDB IDs (deduplicated via set)
-            if result.pdb_ids:
-                print(f"     Adding {len(result.pdb_ids)} PDB IDs")
-                all_pdb_ids.update(result.pdb_ids)
-            
-            # Collect scores
-            if result.scores:
-                all_scores.update(result.scores)
-            
-            # Collect tools used
-            if result.tool_used:
-                all_tools.add(result.tool_used)
-            
-            # Sum execution times
-            if result.execution_time:
-                total_execution_time += result.execution_time
-        else:
-            failed_retrievals += 1
-            if result.error_message:
-                all_errors.append(result.error_message)
-    
-    # Set combined fields
-    combined.pdb_ids = list(all_pdb_ids) if all_pdb_ids else []
-    combined.scores = all_scores if all_scores else {}
-    combined.total_count = len(all_pdb_ids)
-    combined.returned_count = len(all_pdb_ids)
-    combined.tool_used = ", ".join(sorted(all_tools)) if all_tools else None
-    combined.execution_time = total_execution_time
-    combined.successful_retrievals = successful_retrievals
-    combined.failed_retrievals = failed_retrievals
-    combined.warnings = all_errors if all_errors else None
-    combined.success = successful_retrievals > 0
-    
-    # Store original results for reference
-    combined.raw_response = {
-        "original_results_count": len(protein_results),
-        "deduplicated_pdb_count": len(all_pdb_ids),
-        "individual_counts": [r.get_result_count() for r in protein_results]
-    }
-    
-    print(f"   Deduplication complete: {len(all_pdb_ids)} unique PDB IDs from {len(protein_results)} searches")
-    
-    return combined
+class WebSearchResponse(BaseModel):
+    success: bool
+    message: str
+    data: Optional[WebResearchAgentModel] = None
+    execution_time: float
+    timestamp: datetime
+
+class ProteinOnlySearchResponse(BaseModel):
+    success: bool
+    message: str
+    data: Optional[ProteinSearchResponse] = None
+    execution_time: float
+    timestamp: datetime
 
 async def run_web_search(query: str) -> Optional[WebResearchAgentModel]:
     """Run web search in a separate thread"""
@@ -144,7 +82,7 @@ async def run_web_search(query: str) -> Optional[WebResearchAgentModel]:
         print(f"❌ Web search error: {e}")
         return None
 
-async def run_protein_search(query: str) -> Optional[ProteinSearchUnifiedResults]:
+async def run_protein_search(query: str) -> Optional[ProteinSearchResponse]:
     """Run protein search in a separate thread"""
     try:
         loop = asyncio.get_event_loop()
@@ -154,16 +92,127 @@ async def run_protein_search(query: str) -> Optional[ProteinSearchUnifiedResults
         print(f"❌ Protein search error: {e}")
         return None
 
+
+@app.post("/web-search", response_model=WebSearchResponse)
+async def web_search_endpoint(request: WebSearchRequest):
+    """
+    Web-only search endpoint that performs web research
+    
+    Args:
+        request: WebSearchRequest containing query
+    
+    Returns:
+        WebSearchResponse with web search results
+    """
+    start_time = time.time()
+    
+    try:
+        print(f"🔍 Processing web search request: {request.query}")
+        
+        # Run web search
+        web_result = await run_web_search(request.query)
+        execution_time = time.time() - start_time
+        
+        if web_result:
+            print(f"✅ Web search completed successfully in {execution_time:.2f}s")
+            results_count = len(web_result.research_paper.search_result) if web_result.research_paper and web_result.research_paper.search_result else 0
+            return WebSearchResponse(
+                success=True,
+                message=f"Web search completed successfully. Found {results_count} results.",
+                data=web_result,
+                execution_time=execution_time,
+                timestamp=datetime.now()
+            )
+        else:
+            print(f"❌ Web search failed in {execution_time:.2f}s")
+            return WebSearchResponse(
+                success=False,
+                message="Web search failed",
+                data=None,
+                execution_time=execution_time,
+                timestamp=datetime.now()
+            )
+            
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_message = f"Web search failed: {str(e)}"
+        print(f"❌ {error_message}")
+        
+        return WebSearchResponse(
+            success=False,
+            message=error_message,
+            data=None,
+            execution_time=execution_time,
+            timestamp=datetime.now()
+        )
+
+
+@app.post("/protein-search", response_model=ProteinOnlySearchResponse)
+async def protein_search_endpoint(request: ProteinSearchRequest):
+    """
+    Protein-only search endpoint that performs protein structure search
+    
+    Args:
+        request: ProteinSearchRequest containing query
+    
+    Returns:
+        ProteinOnlySearchResponse with protein search results
+    """
+    start_time = time.time()
+    
+    try:
+        print(f"🔍 Processing protein search request: {request.query}")
+        
+        # Run protein search
+        protein_result = await run_protein_search(request.query)
+        execution_time = time.time() - start_time
+        
+        if protein_result and protein_result.success:
+            print(f"✅ Protein search completed successfully in {execution_time:.2f}s")
+            total_results = sum(len(tool.data) if hasattr(tool, 'data') and tool.data else 0 
+                              for tool in protein_result.tool_results if tool.success)
+            return ProteinOnlySearchResponse(
+                success=True,
+                message=f"Protein search completed successfully. Found results from {len(protein_result.tool_results)} tools with {total_results} total entries.",
+                data=protein_result,
+                execution_time=execution_time,
+                timestamp=datetime.now()
+            )
+        else:
+            print(f"❌ Protein search failed in {execution_time:.2f}s")
+            return ProteinOnlySearchResponse(
+                success=False,
+                message="Protein search failed or returned no results",
+                data=protein_result,
+                execution_time=execution_time,
+                timestamp=datetime.now()
+            )
+            
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_message = f"Protein search failed: {str(e)}"
+        print(f"❌ {error_message}")
+        
+        return ProteinOnlySearchResponse(
+            success=False,
+            message=error_message,
+            data=None,
+            execution_time=execution_time,
+            timestamp=datetime.now()
+        )
+
+
 @app.post("/search", response_model=SearchResponse)
 async def search_endpoint(request: SearchRequest):
     """
     Main search endpoint that combines web research and protein structure search
+    Returns separate results for each tool used
     
     Args:
         request: SearchRequest containing query and search options
     
     Returns:
-        SearchResponse with combined and deduplicated results
+        SearchResponse with tool-specific results
     """
     start_time = time.time()
     
@@ -172,60 +221,103 @@ async def search_endpoint(request: SearchRequest):
         print(f"   - Include web: {request.include_web}")
         print(f"   - Include protein: {request.include_protein}")
         
-        # Initialize tasks list
-        tasks = []
-        web_result = None
-        protein_results = []
+        # Initialize tool results dictionary
+        tool_results = {}
+        total_tools_used = 0
+        successful_tools = 0
+        failed_tools = 0
         
         # Phase 1: Run web search if requested
         if request.include_web:
             print("🖥️  Starting web search...")
-            web_task = run_web_search(request.query)
-            web_result = await web_task
+            web_result = await run_web_search(request.query)
+            total_tools_used += 1
+            
+            if web_result:
+                tool_results["web_search_tool"] = web_result.dict()
+                successful_tools += 1
+                print("✅ Web search completed successfully")
+            else:
+                tool_results["web_search_tool"] = {
+                    "query": request.query,
+                    "success": False,
+                    "error": "Web search failed"
+                }
+                failed_tools += 1
+                print("❌ Web search failed")
         
-        # Phase 2: Run protein searches if requested
+        # Phase 2: Run protein search if requested
         if request.include_protein:
-            if web_result and web_result.upnext_queries:
+            protein_queries = []
+            
+            # Determine protein search queries
+            if request.include_web and web_result and web_result.upnext_queries:
                 # Use follow-up queries from web search for protein search
                 protein_queries = web_result.upnext_queries[:request.max_protein_queries]
                 print(f"🧬 Running protein searches for {len(protein_queries)} queries...")
-                
-                # Run protein searches in parallel
-                protein_tasks = [run_protein_search(query) for query in protein_queries]
-                protein_results = await asyncio.gather(*protein_tasks, return_exceptions=True)
-                
-                # Filter out exceptions and None results
-                protein_results = [r for r in protein_results if isinstance(r, ProteinSearchUnifiedResults) and r is not None]
             else:
                 # Fallback: run protein search with original query
+                protein_queries = [request.query]
                 print("🧬 Running protein search with original query...")
-                protein_result = await run_protein_search(request.query)
-                if protein_result:
-                    protein_results = [protein_result]
+            
+            # Run protein searches in parallel
+            protein_tasks = [run_protein_search(query) for query in protein_queries]
+            protein_results = await asyncio.gather(*protein_tasks, return_exceptions=True)
+            
+            # Process each protein search result separately
+            for i, result in enumerate(protein_results):
+                query_used = protein_queries[i]
+                
+                if isinstance(result, ProteinSearchResponse) and result is not None:
+                    # Each tool result gets added separately
+                    for tool_result in result.tool_results:
+                        tool_name = tool_result.tool_name
+                        # Add query suffix if multiple queries were used
+                        if len(protein_queries) > 1:
+                            unique_tool_name = f"{tool_name}_query_{i+1}"
+                        else:
+                            unique_tool_name = tool_name
+                        
+                        tool_results[unique_tool_name] = tool_result
+                        total_tools_used += 1
+                        
+                        if tool_result.success:
+                            successful_tools += 1
+                        else:
+                            failed_tools += 1
+                else:
+                    # Handle failed protein search
+                    tool_results[f"protein_search_query_{i+1}"] = {
+                        "query": query_used,
+                        "success": False,
+                        "error": str(result) if isinstance(result, Exception) else "Protein search failed"
+                    }
+                    total_tools_used += 1
+                    failed_tools += 1
         
-        # Phase 3: Aggregate and deduplicate results
-        print("📊 Aggregating and deduplicating results...")
-        
-        # Deduplicate protein results
-        combined_protein_result = deduplicate_protein_results(protein_results) if protein_results else None
+        # Phase 3: Create combined result with tool-specific results
+        print("📊 Creating tool-specific result...")
         
         # Determine search type
-        search_type = "combined" if (web_result and combined_protein_result) else \
-                     "web" if web_result else \
-                     "protein" if combined_protein_result else \
+        has_web = "web_search_tool" in tool_results
+        has_protein = any(k != "web_search_tool" for k in tool_results.keys())
+        
+        search_type = "combined" if (has_web and has_protein) else \
+                     "web" if has_web else \
+                     "protein" if has_protein else \
                      "none"
         
-        # Create combined result - convert models to dicts to avoid validation issues
-        web_research_dict = web_result.dict() if web_result else None
-        protein_search_dict = combined_protein_result.dict() if combined_protein_result else None
-        
+        # Create combined result with tool-specific format
         combined_result = CombinedSearchResult(
             query=request.query,
-            web_research=web_research_dict,
-            protein_search=protein_search_dict,
+            tool_results=tool_results,
             search_type=search_type,
             timestamp=datetime.now(),
-            success=bool(web_result or combined_protein_result)
+            success=successful_tools > 0,
+            total_tools_used=total_tools_used,
+            successful_tools=successful_tools,
+            failed_tools=failed_tools,
+            total_execution_time=time.time() - start_time
         )
         
         execution_time = time.time() - start_time
@@ -236,6 +328,9 @@ async def search_endpoint(request: SearchRequest):
         
         print(f"✅ Search completed in {execution_time:.2f}s")
         print(f"   - {summary}")
+        print(f"   - Tools used: {total_tools_used}")
+        print(f"   - Successful: {successful_tools}")
+        print(f"   - Failed: {failed_tools}")
         
         return SearchResponse(
             success=True,
@@ -253,7 +348,12 @@ async def search_endpoint(request: SearchRequest):
         return SearchResponse(
             success=False,
             message=error_message,
-            data=None,
+            data=CombinedSearchResult(
+                query=request.query,
+                search_type="none",
+                success=False,
+                error_message=str(e)
+            ),
             execution_time=execution_time,
             timestamp=datetime.now()
         )
@@ -270,7 +370,9 @@ async def root():
         "message": "FoldSearch API",
         "version": "1.0.0",
         "endpoints": {
-            "search": "/search - Main search endpoint (POST)",
+            "search": "/search - Combined search endpoint (POST)",
+            "web-search": "/web-search - Web-only search endpoint (POST)",
+            "protein-search": "/protein-search - Protein-only search endpoint (POST)",
             "health": "/health - Health check (GET)",
             "docs": "/docs - API documentation (GET)"
         }
