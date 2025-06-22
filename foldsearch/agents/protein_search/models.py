@@ -276,6 +276,9 @@ class ProteinSearchResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     success: bool = True
     
+    # Scientific Analysis
+    biological_analysis: Optional[Any] = None  # BiologicalAnalysis type
+    
     # Enhanced metadata
     search_summary: Dict[str, Any] = {}
     unique_structures: List[str] = []

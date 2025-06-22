@@ -10,6 +10,7 @@ from agents.protein_search.worker import ProteinSearchAgent
 from agents.models import CombinedSearchResult
 from agents.protein_search.models import ProteinSearchResponse
 from agents.web_search.models import WebResearchAgentModel
+from agents.analysis_service import AnalysisService
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -29,27 +30,32 @@ app.add_middleware(
 
 web_agent = None
 protein_agent = None
+analysis_service = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize agents on startup"""
-    global web_agent, protein_agent
+    global web_agent, protein_agent, analysis_service
     print("🚀 Initializing FoldSearch API...")
     web_agent = WebResearchAgent()
     protein_agent = ProteinSearchAgent()
-    print("✅ Agents initialized successfully!")
+    analysis_service = AnalysisService()
+    print("✅ Agents and analysis service initialized successfully!")
 
 class SearchRequest(BaseModel):
     query: str
     include_web: bool = True
     include_protein: bool = True
     max_protein_queries: int = 5
+    include_analysis: bool = True
 
 class WebSearchRequest(BaseModel):
     query: str
+    include_analysis: bool = True
 
 class ProteinSearchRequest(BaseModel):
     query: str
+    include_analysis: bool = True
 
 class SearchResponse(BaseModel):
     success: bool
@@ -111,14 +117,32 @@ async def web_search_endpoint(request: WebSearchRequest):
         
         # Run web search
         web_result = await run_web_search(request.query)
+        
+        # Generate analysis if requested
+        if request.include_analysis and web_result:
+            print("🧠 Generating biological analysis...")
+            try:
+                # Prepare data for analysis
+                analysis_data = {"web_search_tool": web_result.dict()}
+                analysis = await analysis_service.generate_analysis(
+                    query=request.query,
+                    search_results=analysis_data,
+                    analysis_type="web"
+                )
+                web_result.biological_analysis = analysis
+                print(f"✅ Analysis completed in {analysis.processing_time:.2f}s")
+            except Exception as e:
+                print(f"⚠️  Analysis failed: {e}")
+        
         execution_time = time.time() - start_time
         
         if web_result:
             print(f"✅ Web search completed successfully in {execution_time:.2f}s")
             results_count = len(web_result.research_paper.search_result) if web_result.research_paper and web_result.research_paper.search_result else 0
+            analysis_note = " with biological analysis" if request.include_analysis and web_result.biological_analysis else ""
             return WebSearchResponse(
                 success=True,
-                message=f"Web search completed successfully. Found {results_count} results.",
+                message=f"Web search completed successfully{analysis_note}. Found {results_count} results.",
                 data=web_result,
                 execution_time=execution_time,
                 timestamp=datetime.now()
@@ -165,15 +189,36 @@ async def protein_search_endpoint(request: ProteinSearchRequest):
         
         # Run protein search
         protein_result = await run_protein_search(request.query)
+        
+        # Generate analysis if requested
+        if request.include_analysis and protein_result and protein_result.success:
+            print("🧠 Generating biological analysis...")
+            try:
+                # Prepare data for analysis
+                analysis_data = {}
+                for tool_result in protein_result.tool_results:
+                    analysis_data[tool_result.tool_name] = tool_result
+                
+                analysis = await analysis_service.generate_analysis(
+                    query=request.query,
+                    search_results=analysis_data,
+                    analysis_type="protein"
+                )
+                protein_result.biological_analysis = analysis
+                print(f"✅ Analysis completed in {analysis.processing_time:.2f}s")
+            except Exception as e:
+                print(f"⚠️  Analysis failed: {e}")
+        
         execution_time = time.time() - start_time
         
         if protein_result and protein_result.success:
             print(f"✅ Protein search completed successfully in {execution_time:.2f}s")
             total_results = sum(len(tool.data) if hasattr(tool, 'data') and tool.data else 0 
                               for tool in protein_result.tool_results if tool.success)
+            analysis_note = " with biological analysis" if request.include_analysis and protein_result.biological_analysis else ""
             return ProteinOnlySearchResponse(
                 success=True,
-                message=f"Protein search completed successfully. Found results from {len(protein_result.tool_results)} tools with {total_results} total entries.",
+                message=f"Protein search completed successfully{analysis_note}. Found results from {len(protein_result.tool_results)} tools with {total_results} total entries.",
                 data=protein_result,
                 execution_time=execution_time,
                 timestamp=datetime.now()
@@ -295,7 +340,32 @@ async def search_endpoint(request: SearchRequest):
                     total_tools_used += 1
                     failed_tools += 1
         
-        # Phase 3: Create combined result with tool-specific results
+        # Phase 3: Generate analysis if requested
+        if request.include_analysis and successful_tools > 0:
+            print("🧠 Generating comprehensive biological analysis...")
+            try:
+                # Determine analysis type
+                has_web = "web_search_tool" in tool_results
+                has_protein = any(k != "web_search_tool" for k in tool_results.keys())
+                
+                analysis_type = "combined" if (has_web and has_protein) else \
+                               "web" if has_web else \
+                               "protein" if has_protein else \
+                               "none"
+                
+                analysis = await analysis_service.generate_analysis(
+                    query=request.query,
+                    search_results=tool_results,
+                    analysis_type=analysis_type
+                )
+                print(f"✅ Analysis completed in {analysis.processing_time:.2f}s")
+            except Exception as e:
+                print(f"⚠️  Analysis failed: {e}")
+                analysis = None
+        else:
+            analysis = None
+        
+        # Phase 4: Create combined result with tool-specific results
         print("📊 Creating tool-specific result...")
         
         # Determine search type
@@ -311,6 +381,7 @@ async def search_endpoint(request: SearchRequest):
         combined_result = CombinedSearchResult(
             query=request.query,
             tool_results=tool_results,
+            biological_analysis=analysis,
             search_type=search_type,
             timestamp=datetime.now(),
             success=successful_tools > 0,
@@ -324,7 +395,8 @@ async def search_endpoint(request: SearchRequest):
         
         # Generate summary message
         summary = combined_result.get_summary()
-        message = f"Search completed successfully. {summary}"
+        analysis_note = " with comprehensive biological analysis" if request.include_analysis and analysis else ""
+        message = f"Search completed successfully{analysis_note}. {summary}"
         
         print(f"✅ Search completed in {execution_time:.2f}s")
         print(f"   - {summary}")
@@ -367,21 +439,34 @@ async def health_check():
 async def root():
     """Root endpoint with API information"""
     return {
-        "message": "FoldSearch API",
+        "message": "FoldSearch API with GPT-4o Biological Analysis",
         "version": "1.0.0",
+        "features": [
+            "Web research and protein structure search",
+            "GPT-4o powered biological analysis",
+            "Scientific recommendations and insights",
+            "Comprehensive data integration"
+        ],
         "endpoints": {
-            "search": "/search - Combined search endpoint (POST)",
-            "web-search": "/web-search - Web-only search endpoint (POST)",
-            "protein-search": "/protein-search - Protein-only search endpoint (POST)",
+            "search": "/search - Combined search endpoint with analysis (POST)",
+            "web-search": "/web-search - Web-only search endpoint with analysis (POST)",
+            "protein-search": "/protein-search - Protein-only search endpoint with analysis (POST)",
             "health": "/health - Health check (GET)",
             "docs": "/docs - API documentation (GET)"
+        },
+        "analysis_features": {
+            "scientific_summary": "Concise overview of findings",
+            "key_findings": "Most important biological insights",
+            "research_recommendations": "Actionable next steps",
+            "experimental_approaches": "Suggested methodologies",
+            "limitations": "Data quality assessment"
         }
     }
 
 # Example usage for testing
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting FoldSearch API server...")
+    print("🚀 Starting FoldSearch API server with GPT-4o Analysis...")
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

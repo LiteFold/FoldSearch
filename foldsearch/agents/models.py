@@ -2,6 +2,13 @@ from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 
+# Import analysis models
+try:
+    from agents.analysis_service import BiologicalAnalysis
+except ImportError:
+    # Handle circular import by defining a placeholder
+    BiologicalAnalysis = Any
+
 # ===== WEB RESEARCH MODELS =====
 
 class SearchResult(BaseModel):
@@ -43,6 +50,9 @@ class CombinedSearchResult(BaseModel):
     
     # Tool-specific results dictionary - tool_name: tool_result
     tool_results: Dict[str, Any] = {}
+    
+    # Scientific Analysis
+    biological_analysis: Optional[Any] = None  # BiologicalAnalysis type
     
     # Combined metadata
     search_type: str  # 'web', 'protein', or 'combined'
