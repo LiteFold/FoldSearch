@@ -7,9 +7,14 @@ from datetime import datetime
 
 from agents.web_search.worker import WebResearchAgent
 from agents.protein_search.worker import ProteinSearchAgent
+from agents.ligand_search.worker import LigandSearchAgent
+
 from agents.models import CombinedSearchResult
+
 from agents.protein_search.models import ProteinSearchResponse
+from agents.ligand_search.models import LigandSearchResponse
 from agents.web_search.models import WebResearchAgentModel
+
 from agents.analysis_service import AnalysisService
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,18 +32,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 web_agent = None
 protein_agent = None
+ligand_agent = None
 analysis_service = None
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize agents on startup"""
-    global web_agent, protein_agent, analysis_service
+    global web_agent, protein_agent, ligand_agent, analysis_service
     print("🚀 Initializing FoldSearch API...")
     web_agent = WebResearchAgent()
     protein_agent = ProteinSearchAgent()
+    ligand_agent = LigandSearchAgent()
     analysis_service = AnalysisService()
     print("✅ Agents and analysis service initialized successfully!")
 
@@ -49,20 +55,16 @@ class SearchRequest(BaseModel):
     max_protein_queries: int = 5
     include_analysis: bool = True
 
-class WebSearchRequest(BaseModel):
-    query: str
-    include_analysis: bool = True
-
-class ProteinSearchRequest(BaseModel):
-    query: str
-    include_analysis: bool = True
-
 class SearchResponse(BaseModel):
     success: bool
     message: str
     data: Optional[CombinedSearchResult] = None
     execution_time: float
     timestamp: datetime
+
+class WebSearchRequest(BaseModel):
+    query: str
+    include_analysis: bool = True
 
 class WebSearchResponse(BaseModel):
     success: bool
@@ -71,12 +73,19 @@ class WebSearchResponse(BaseModel):
     execution_time: float
     timestamp: datetime
 
+class ProteinSearchRequest(BaseModel):
+    query: str
+    include_analysis: bool = True
+
 class ProteinOnlySearchResponse(BaseModel):
     success: bool
     message: str
     data: Optional[ProteinSearchResponse] = None
     execution_time: float
     timestamp: datetime
+    
+class LigandSearchRequest(BaseModel):
+    query: str    
 
 async def run_web_search(query: str) -> Optional[WebResearchAgentModel]:
     """Run web search in a separate thread"""
@@ -98,6 +107,15 @@ async def run_protein_search(query: str) -> Optional[ProteinSearchResponse]:
         print(f"❌ Protein search error: {e}")
         return None
 
+async def run_ligand_search(query: str) -> Optional[LigandSearchResponse]:
+    """Run ligand search in a separate thread"""
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, ligand_agent.search, query)
+        return result
+    except Exception as e:
+        print(f"❌ Ligand search error: {e}")
+        return None
 
 @app.post("/web-search", response_model=WebSearchResponse)
 async def web_search_endpoint(request: WebSearchRequest):
@@ -239,6 +257,54 @@ async def protein_search_endpoint(request: ProteinSearchRequest):
         print(f"❌ {error_message}")
         
         return ProteinOnlySearchResponse(
+            success=False,
+            message=error_message,
+            data=None,
+            execution_time=execution_time,
+            timestamp=datetime.now()
+        )
+
+
+@app.post("/ligand-search", response_model=LigandSearchResponse)
+async def ligand_search_endpoint(request: LigandSearchRequest):
+    """
+    Ligand search endpoint that performs ligand structure search
+
+    Args:
+        request: LigandSearchRequest containing query
+
+    Returns:
+        LigandSearchResponse with ligand search results
+    """
+    start_time = time.time()
+
+    try:
+        print(f"🔍 Processing ligand search request: {request.query}")
+
+        # Run ligand search
+        ligand_result = await run_ligand_search(request.query)
+
+        execution_time = time.time() - start_time
+
+        if ligand_result and ligand_result.success:
+            print(f"✅ Ligand search completed successfully in {execution_time:.2f}s")
+            return ligand_result
+        else:
+            print(f"❌ Ligand search failed in {execution_time:.2f}s")
+            return LigandSearchResponse(
+                success=False,
+                message="Ligand search failed or returned no results",
+                data=ligand_result,
+                execution_time=execution_time,
+                timestamp=datetime.now()
+            )
+
+    except Exception as e:
+        execution_time = time.time() - start_time
+        error_message = f"Ligand search failed: {str(e)}"
+        print(f"❌ {error_message}")
+
+        return LigandSearchResponse(
             success=False,
             message=error_message,
             data=None,
